@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web CCTV - Motion Detection & Telegram Alerts</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #2c3e50, #4a6491);
+            color: white;
+            padding: 25px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .header::before {
+            content: "";
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            animation: pulse 8s infinite linear;
+        }
+        
+        .header h1 {
+            margin-bottom: 10px;
+            font-size: 2.5em;
+            position: relative;
+        }
+        
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+            position: relative;
+        }
+        
+        .status-bar {
+            background: #34495e;
+            padding: 12px 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: white;
+            position: relative;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #e74c3c;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-dot.active {
+            background: #2ecc71;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+            padding: 25px;
+        }
+        
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .camera-section, .config-section {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+        }
+        
+        .video-container {
+            position: relative;
+            width: 100%;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+        
+        #videoElement {
+            width: 100%;
+            height: 300px;
+            object-fit: cover;
+            display: block;
+        }
+        
+        .motion-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(231, 76, 60, 0.3);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 2em;
+            color: white;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            background: #3498db;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 6px rgba(50, 50, 93, 0.11), 0 1px 3px rgba(0, 0, 0, 0.08);
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 7px 14px rgba(50, 50, 93, 0.1), 0 3px 6px rgba(0, 0, 0, 0.08);
+        }
+        
+        button:active {
+            transform: translateY(1px);
+        }
+        
+        button:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        button.danger {
+            background: #e74c3c;
+        }
+        
+        button.danger:hover {
+            background: #c0392b;
+        }
+        
+        button.success {
+            background: #2ecc71;
+        }
+        
+        button.success:hover {
+            background: #27ae60;
+        }
+        
+        button.warning {
+            background: #f39c12;
+        }
+        
+        button.warning:hover {
+            background: #d35400;
+        }
+        
+        .alert {
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 8px;
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            display: none;
+        }
+        
+        .alert.motion {
+            background: #f8d7da;
+            border-color: #f5c6cb;
+            color: #721c24;
+            animation: alertPulse 0.5s infinite alternate;
+        }
+        
+        @keyframes alertPulse {
+            from { background-color: #f8d7da; }
+            to { background-color: #f5c6cb; }
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            transition: transform 0.3s;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 5px;
+        }
+        
+        .config-form {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        input, select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border 0.3s;
+        }
+        
+        input:focus, select:focus {
+            border-color: #3498db;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+        }
+        
+        .help-text {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 5px;
+        }
+        
+        .instructions {
+            background: #e8f4fd;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 25px;
+        }
+        
+        .instructions h3 {
+            margin-bottom: 15px;
+            color: #2c3e50;
+        }
+        
+        .instructions ol {
+            margin-left: 20px;
+        }
+        
+        .instructions li {
+            margin-bottom: 10px;
+            line-height: 1.5;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #7f8c8d;
+            font-size: 14px;
+            border-top: 1px solid #eee;
+        }
+        
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            background: #2ecc71;
+            color: white;
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            transform: translateX(150%);
+            transition: transform 0.4s;
+            z-index: 1000;
+        }
+        
+        .notification.show {
+            transform: translateX(0);
+        }
+        
+        .notification.error {
+            background: #e74c3c;
+        }
+        
+        .logs {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #34495e;
+        }
+        
+        .log-time {
+            color: #3498db;
+        }
+        
+        .log-message {
+            color: #ecf0f1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚨 Web-Based CCTV System</h1>
+            <p>Motion Detection & Telegram Notifications</p>
+        </div>
+        
+        <div class="status-bar">
+            <div class="status-indicator">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Initializing...</span>
+            </div>
+            <div id="connectionInfo">No camera active</div>
+        </div>
+        
+        <div class="main-content">
+            <div class="camera-section">
+                <h2>📹 Live Camera Feed</h2>
+                <div class="video-container">
+                    <video id="videoElement" autoplay playsinline></video>
+                    <div class="motion-overlay" id="motionOverlay">
+                        <div>MOTION DETECTED!</div>
+                    </div>
+                </div>
+                
+                <div class="controls">
+                    <button id="startCamera" class="success">
+                        <span>📷</span> Start Camera
+                    </button>
+                    <button id="stopCamera" class="danger" disabled>
+                        <span>⏹️</span> Stop Camera
+                    </button>
+                    <button id="toggleMotion" class="warning" disabled>
+                        <span>🔍</span> Enable Motion Detection
+                    </button>
+                    <button id="testNotification" class="success">
+                        <span>📱</span> Test Telegram
+                    </button>
+                </div>
+                
+                <div id="motionAlert" class="alert">
+                    🚨 Motion Detected! Recording in progress...
+                </div>
+                
+                <div class="stats">
+                    <div class="stat-card">
+                        <div class="stat-value" id="frameRate">0</div>
+                        <div class="stat-label">FPS</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="motionCount">0</div>
+                        <div class="stat-label">Motions Detected</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="recordingCount">0</div>
+                        <div class="stat-label">Recordings</div>
+                    </div>
+                </div>
+                
+                <div class="logs">
+                    <div class="log-entry">
+                        <span class="log-time" id="currentTime"></span>
+                        <span class="log-message">System initialized. Click "Start Camera" to begin.</span>
+                    </div>
+                    <div id="logContainer"></div>
+                </div>
+            </div>
+            
+            <div class="config-section">
+                <h2>⚙️ Configuration</h2>
+                
+                <div class="config-form">
+                    <div class="form-group">
+                        <label for="botToken">Telegram Bot Token</label>
+                        <input type="text" id="botToken" placeholder="Enter your Telegram bot token">
+                        <div class="help-text">Get this from @BotFather on Telegram</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="chatId">Telegram Chat ID</label>
+                        <input type="text" id="chatId" placeholder="Enter your Telegram chat ID">
+                        <div class="help-text">Your personal chat ID with the bot</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="sensitivity">Motion Sensitivity</label>
+                        <select id="sensitivity">
+                            <option value="10">Low</option>
+                            <option value="30" selected>Medium</option>
+                            <option value="50">High</option>
+                            <option value="70">Very High</option>
+                        </select>
+                        <div class="help-text">Adjust how sensitive motion detection is</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="recordDuration">Recording Duration (seconds)</label>
+                        <input type="number" id="recordDuration" value="10" min="5" max="60">
+                        <div class="help-text">How long to record after motion is detected</div>
+                    </div>
+                    
+                    <button id="saveConfig" class="success">
+                        <span>💾</span> Save Configuration
+                    </button>
+                </div>
+                
+                <div class="instructions">
+                    <h3>📋 Setup Instructions</h3>
+                    <ol>
+                        <li><strong>Create a Telegram Bot:</strong> Message @BotFather on Telegram and follow the instructions to create a new bot. Copy the bot token.</li>
+                        <li><strong>Get Your Chat ID:</strong> Start a chat with your bot, then visit: <code>https://api.telegram.org/bot&lt;YOUR_BOT_TOKEN&gt;/getUpdates</code> to find your chat ID.</li>
+                        <li><strong>Configure:</strong> Enter your bot token and chat ID above and click "Save Configuration".</li>
+                        <li><strong>Start Monitoring:</strong> Click "Start Camera", allow camera access, then enable "Motion Detection".</li>
+                        <li><strong>Test:</strong> Use the "Test Telegram" button to verify notifications are working.</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Web CCTV System | Motion Detection & Telegram Notifications | Standalone HTML Application</p>
+        </div>
+    </div>
+
+    <div class="notification" id="notification">
+        Notification sent successfully!
+    </div>
+
+    <script>
+        class CCTVSystem {
+            constructor() {
+                this.videoElement = document.getElementById('videoElement');
+                this.startCameraBtn = document.getElementById('startCamera');
+                this.stopCameraBtn = document.getElementById('stopCamera');
+                this.toggleMotionBtn = document.getElementById('toggleMotion');
+                this.testNotificationBtn = document.getElementById('testNotification');
+                this.saveConfigBtn = document.getElementById('saveConfig');
+                this.motionAlert = document.getElementById('motionAlert');
+                this.motionOverlay = document.getElementById('motionOverlay');
+                this.statusDot = document.getElementById('statusDot');
+                this.statusText = document.getElementById('statusText');
+                this.connectionInfo = document.getElementById('connectionInfo');
+                this.frameRateElement = document.getElementById('frameRate');
+                this.motionCountElement = document.getElementById('motionCount');
+                this.recordingCountElement = document.getElementById('recordingCount');
+                this.notification = document.getElementById('notification');
+                this.logContainer = document.getElementById('logContainer');
+                this.currentTimeElement = document.getElementById('currentTime');
+                
+                this.stream = null;
+                this.canvas = null;
+                this.context = null;
+                this.isStreaming = false;
+                this.motionDetectionEnabled = false;
+                this.frameCount = 0;
+                this.lastFrameTime = Date.now();
+                this.frameRate = 0;
+                this.motionCount = 0;
+                this.recordingCount = 0;
+                this.previousFrame = null;
+                this.recordingChunks = [];
+                this.mediaRecorder = null;
+                this.recordingTimeout = null;
+                
+                // Configuration with defaults
+                this.config = {
+                    botToken: '',
+                    chatId: '',
+                    sensitivity: 30,
+                    recordDuration: 10
+                };
+                
+                this.initializeApp();
+            }
+            
+            initializeApp() {
+                this.updateTime();
+                setInterval(() => this.updateTime(), 1000);
+                
+                this.createHiddenCanvas();
+                this.loadConfiguration();
+                this.setupEventListeners();
+                this.addLog("System initialized successfully");
+            }
+            
+            updateTime() {
+                const now = new Date();
+                this.currentTimeElement.textContent = now.toLocaleTimeString();
+            }
+            
+            createHiddenCanvas() {
+                this.canvas = document.createElement('canvas');
+                this.context = this.canvas.getContext('2d');
+            }
+            
+            loadConfiguration() {
+                const savedConfig = localStorage.getItem('cctvConfig');
+                if (savedConfig) {
+                    this.config = { ...this.config, ...JSON.parse(savedConfig) };
+                    document.getElementById('botToken').value = this.config.botToken;
+                    document.getElementById('chatId').value = this.config.chatId;
+                    document.getElementById('sensitivity').value = this.config.sensitivity;
+                    document.getElementById('recordDuration').value = this.config.recordDuration;
+                    this.addLog("Configuration loaded from storage");
+                }
+            }
+            
+            saveConfiguration() {
+                this.config.botToken = document.getElementById('botToken').value;
+                this.config.chatId = document.getElementById('chatId').value;
+                this.config.sensitivity = parseInt(document.getElementById('sensitivity').value);
+                this.config.recordDuration = parseInt(document.getElementById('recordDuration').value);
+                
+                localStorage.setItem('cctvConfig', JSON.stringify(this.config));
+                this.showNotification('Configuration saved successfully!');
+                this.addLog("Configuration saved");
+            }
+            
+            setupEventListeners() {
+                this.startCameraBtn.addEventListener('click', () => this.startCamera());
+                this.stopCameraBtn.addEventListener('click', () => this.stopCamera());
+                this.toggleMotionBtn.addEventListener('click', () => this.toggleMotionDetection());
+                this.testNotificationBtn.addEventListener('click', () => this.testTelegramNotification());
+                this.saveConfigBtn.addEventListener('click', () => this.saveConfiguration());
+            }
+            
+            async startCamera() {
+                try {
+                    this.addLog("Attempting to access camera...");
+                    
+                    // Try to get user media with preferred constraints
+                    this.stream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            width: { ideal: 640 },
+                            height: { ideal: 480 },
+                            facingMode: 'environment' // Prefer back camera on mobile
+                        },
+                        audio: false
+                    });
+                    
+                    this.videoElement.srcObject = this.stream;
+                    this.isStreaming = true;
+                    
+                    // Update UI
+                    this.startCameraBtn.disabled = true;
+                    this.stopCameraBtn.disabled = false;
+                    this.toggleMotionBtn.disabled = false;
+                    
+                    this.updateStatus('Camera Active', true);
+                    this.connectionInfo.textContent = 'Camera is active and streaming';
+                    this.addLog("Camera access granted, streaming started");
+                    
+                    // Start frame processing for motion detection
+                    this.processVideoFrames();
+                    
+                } catch (error) {
+                    console.error('Error accessing camera:', error);
+                    this.addLog(`Camera access error: ${error.message}`, true);
+                    this.showNotification('Cannot access camera. Please ensure you have granted camera permissions.', true);
+                }
+            }
+            
+            stopCamera() {
+                if (this.stream) {
+                    this.stream.getTracks().forEach(track => track.stop());
+                    this.stream = null;
+                }
+                
+                this.isStreaming = false;
+                this.motionDetectionEnabled = false;
+                
+                // Update UI
+                this.startCameraBtn.disabled = false;
+                this.stopCameraBtn.disabled = true;
+                this.toggleMotionBtn.disabled = true;
+                this.toggleMotionBtn.textContent = 'Enable Motion Detection';
+                this.toggleMotionBtn.classList.remove('danger');
+                this.toggleMotionBtn.classList.add('warning');
+                this.motionAlert.style.display = 'none';
+                this.motionOverlay.style.display = 'none';
+                
+                // Reset stats
+                this.frameRate = 0;
+                this.updateStats();
+                
+                this.updateStatus('Camera Inactive', false);
+                this.connectionInfo.textContent = 'Camera is inactive';
+                this.addLog("Camera stopped");
+            }
+            
+            toggleMotionDetection() {
+                this.motionDetectionEnabled = !this.motionDetectionEnabled;
+                this.toggleMotionBtn.textContent = this.motionDetectionEnabled ? 
+                    'Disable Motion Detection' : 'Enable Motion Detection';
+                this.toggleMotionBtn.classList.toggle('danger', this.motionDetectionEnabled);
+                this.toggleMotionBtn.classList.toggle('warning', !this.motionDetectionEnabled);
+                
+                if (this.motionDetectionEnabled) {
+                    this.addLog("Motion detection enabled");
+                } else {
+                    this.addLog("Motion detection disabled");
+                    this.motionOverlay.style.display = 'none';
+                }
+            }
+            
+            processVideoFrames() {
+                if (!this.isStreaming) return;
+                
+                // Set canvas dimensions to match video
+                if (this.videoElement.videoWidth > 0) {
+                    this.canvas.width = this.videoElement.videoWidth;
+                    this.canvas.height = this.videoElement.videoHeight;
+                }
+                
+                // Draw current video frame to canvas
+                this.context.drawImage(this.videoElement, 0, 0, this.canvas.width, this.canvas.height);
+                
+                // Motion detection processing
+                if (this.motionDetectionEnabled) {
+                    const imageData = this.context.getImageData(0, 0, this.canvas.width, this.canvas.height);
+                    const motionDetected = this.detectMotion(imageData);
+                    
+                    if (motionDetected) {
+                        this.onMotionDetected();
+                    }
+                }
+                
+                // Calculate frame rate
+                this.frameCount++;
+                const now = Date.now();
+                if (now - this.lastFrameTime >= 1000) {
+                    this.frameRate = this.frameCount;
+                    this.frameCount = 0;
+                    this.lastFrameTime = now;
+                    this.updateStats();
+                }
+                
+                // Continue processing
+                requestAnimationFrame(() => this.processVideoFrames());
+            }
+            
+            detectMotion(currentFrame) {
+                if (!this.previousFrame) {
+                    this.previousFrame = currentFrame;
+                    return false;
+                }
+                
+                let diff = 0;
+                const data = currentFrame.data;
+                const prevData = this.previousFrame.data;
+                const length = data.length;
+                const threshold = this.config.sensitivity;
+                
+                for (let i = 0; i < length; i += 4) {
+                    const r = Math.abs(data[i] - prevData[i]);
+                    const g = Math.abs(data[i + 1] - prevData[i + 1]);
+                    const b = Math.abs(data[i + 2] - prevData[i + 2]);
+                    
+                    if (r > threshold || g > threshold || b > threshold) {
+                        diff++;
+                    }
+                }
+                
+                this.previousFrame = currentFrame;
+                
+                const motionPercentage = (diff / (length / 4)) * 100;
+                return motionPercentage > 2; // Motion detected if more than 2% of pixels changed
+            }
+            
+            onMotionDetected() {
+                this.motionCount++;
+                this.motionAlert.style.display = 'block';
+                this.motionOverlay.style.display = 'flex';
+                
+                this.addLog(`Motion detected! Total: ${this.motionCount}`);
+                
+                // Send Telegram notification if configured and online
+                if (this.config.botToken && this.config.chatId && navigator.onLine) {
+                    this.sendTelegramNotification();
+                }
+                
+                // Start recording if supported
+                this.startRecording();
+                
+                // Hide alert after 5 seconds
+                setTimeout(() => {
+                    this.motionAlert.style.display = 'none';
+                    this.motionOverlay.style.display = 'none';
+                }, 5000);
+                
+                this.updateStats();
+            }
+            
+            async sendTelegramNotification() {
+                try {
+                    const message = `🚨 Motion detected in your CCTV at ${new Date().toLocaleString()}`;
+                    const url = `https://api.telegram.org/bot${this.config.botToken}/sendMessage`;
+                    
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            chat_id: this.config.chatId,
+                            text: message,
+                            parse_mode: 'HTML'
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        this.addLog("Telegram notification sent successfully");
+                        this.showNotification('Telegram alert sent!');
+                    } else {
+                        this.addLog("Failed to send Telegram notification", true);
+                    }
+                } catch (error) {
+                    console.error('Error sending Telegram notification:', error);
+                    this.addLog(`Telegram error: ${error.message}`, true);
+                }
+            }
+            
+            async testTelegramNotification() {
+                if (!this.config.botToken || !this.config.chatId) {
+                    this.showNotification('Please configure your Telegram bot token and chat ID first.', true);
+                    return;
+                }
+                
+                if (!navigator.onLine) {
+                    this.showNotification('No internet connection. Cannot send test notification.', true);
+                    return;
+                }
+                
+                try {
+                    const message = `✅ Test notification from your CCTV system at ${new Date().toLocaleString()}`;
+                    const url = `https://api.telegram.org/bot${this.config.botToken}/sendMessage`;
+                    
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            chat_id: this.config.chatId,
+                            text: message,
+                            parse_mode: 'HTML'
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        this.addLog("Test Telegram notification sent");
+                        this.showNotification('Test notification sent successfully!');
+                    } else {
+                        this.addLog("Failed to send test notification", true);
+                        this.showNotification('Failed to send test notification. Check your configuration.', true);
+                    }
+                } catch (error) {
+                    console.error('Error sending test notification:', error);
+                    this.addLog(`Test notification error: ${error.message}`, true);
+                    this.showNotification('Error sending test notification. Check your configuration.', true);
+                }
+            }
+            
+            startRecording() {
+                // In a real implementation, this would use MediaRecorder API
+                // For this demo, we'll just simulate recording
+                this.recordingCount++;
+                this.addLog(`Recording started (${this.config.recordDuration}s)`);
+                
+                // Stop recording after configured duration
+                if (this.recordingTimeout) {
+                    clearTimeout(this.recordingTimeout);
+                }
+                
+                this.recordingTimeout = setTimeout(() => {
+                    this.addLog("Recording stopped");
+                    this.updateStats();
+                }, this.config.recordDuration * 1000);
+            }
+            
+            updateStats() {
+                this.frameRateElement.textContent = this.frameRate;
+                this.motionCountElement.textContent = this.motionCount;
+                this.recordingCountElement.textContent = this.recordingCount;
+            }
+            
+            updateStatus(text, isActive) {
+                this.statusText.textContent = text;
+                this.statusDot.classList.toggle('active', isActive);
+            }
+            
+            addLog(message, isError = false) {
+                const logEntry = document.createElement('div');
+                logEntry.className = 'log-entry';
+                
+                const time = document.createElement('span');
+                time.className = 'log-time';
+                time.textContent = new Date().toLocaleTimeString() + ' ';
+                
+                const messageSpan = document.createElement('span');
+                messageSpan.className = 'log-message';
+                messageSpan.textContent = message;
+                if (isError) {
+                    messageSpan.style.color = '#e74c3c';
+                }
+                
+                logEntry.appendChild(time);
+                logEntry.appendChild(messageSpan);
+                
+                this.logContainer.appendChild(logEntry);
+                
+                // Auto-scroll to bottom
+                this.logContainer.scrollTop = this.logContainer.scrollHeight;
+            }
+            
+            showNotification(message, isError = false) {
+                this.notification.textContent = message;
+                this.notification.classList.toggle('error', isError);
+                this.notification.classList.add('show');
+                
+                setTimeout(() => {
+                    this.notification.classList.remove('show');
+                }, 3000);
+            }
+        }
+        
+        // Initialize the CCTV system when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new CCTVSystem();
+        });
+    </script>
+</body>
+</html>
